@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Cricket scores.
 
-One Telegram message every morning (~6:17 IST via GitHub Actions) with the
-live-score lines worth caring about: anything involving India (incl. India
-A / women / U19), international matches between major sides, IPL/WPL.
+Two Telegram editions a day via GitHub Actions — ~6:17 IST (overnight
+matches) and ~21:47 IST (the day's results) — with the live-score lines
+worth caring about: anything involving India (incl. India A / women /
+U19), international matches between major sides, IPL/WPL.
 
 One agent, one task, one bot. SILENT when nothing notable is on — a
 message always means there's a match worth checking. Set CRICKET_FORCE=1

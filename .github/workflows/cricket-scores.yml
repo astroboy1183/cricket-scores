@@ -2,14 +2,15 @@ name: Cricket scores
 
 on:
   schedule:
-    # Primary: 00:47 UTC = 06:17 IST. Odd minute avoids GitHub's
-    # top-of-hour cron congestion.
+    # Two editions a day, each with a backup an hour later (GitHub delays
+    # or drops schedule events under load — fleet lesson from 2026-07-04).
+    # Odd minutes avoid top-of-hour cron congestion.
+    # Morning: overnight matches. 00:47 UTC = 06:17 IST; backup 07:17.
     - cron: '47 0 * * *'
-    # Backup: 01:47 UTC = 07:17 IST. GitHub delays or drops schedule
-    # events under load (fleet lesson from 2026-07-04). The guard step skips
-    # this run when the primary already handled today, so it only delivers
-    # when the primary was dropped — or failed, making it a retry too.
     - cron: '47 1 * * *'
+    # Evening: the day's results. 16:17 UTC = 21:47 IST; backup 22:47.
+    - cron: '17 16 * * *'
+    - cron: '17 17 * * *'
   workflow_dispatch: {}
 
 permissions:
@@ -21,20 +22,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Skip if an earlier run already handled today
+      - name: Skip if an earlier run already handled this edition
         id: guard
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Manual runs always proceed; only scheduled runs dedupe against
           # each other. Fails open — a broken check must never cost a send.
+          # Window is 3 hours, NOT today: that pairs each backup with its
+          # own edition's primary while letting the evening edition run
+          # after a successful morning one.
           if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
             exit 0
           fi
-          today=$(date -u +%Y-%m-%d)
+          since=$(date -u -d '3 hours ago' +%Y-%m-%dT%H:%M:%SZ)
           count=$(RUN_ID="$GITHUB_RUN_ID" gh api -X GET \
             "repos/$GITHUB_REPOSITORY/actions/workflows/cricket-scores.yml/runs" \
-            -f event=schedule -f created=">=$today" \
+            -f event=schedule -f created=">=$since" \
             --jq '[.workflow_runs[]
                    | select(.id != (env.RUN_ID|tonumber))
                    | select(.status == "queued" or .status == "in_progress"
@@ -45,10 +49,10 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.guard.outputs.skip != 'true'
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         if: steps.guard.outputs.skip != 'true'
         with:
           python-version: '3.12'
@@ -65,3 +69,16 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python cricket_scores.py
 
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # The 22:15 watchdog only notices tonight — this pings the moment
+          # a run dies, from this agent's own bot, with a link to the log.
+          curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+            -d chat_id="$TELEGRAM_CHAT_ID" \
+            --data-urlencode text="⚠️ $GITHUB_WORKFLOW: run failed — $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            >/dev/null
