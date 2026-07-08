@@ -61,6 +61,9 @@ there's a match worth checking. One agent, one task, one bot:
 
 - Tests run in CI on every push (`.github/workflows/tests.yml`).
 
+- **Upcoming matches count**: India fixtures listed on the board but
+  not yet started are kept, so a match never starts unannounced.
+
 ## Ops
 
 - Schedule: `.github/workflows/cricket-scores.yml`

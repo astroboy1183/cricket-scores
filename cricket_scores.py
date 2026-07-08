@@ -63,7 +63,9 @@ def notable(scores):
         "Below is every match on today's cricket live-score board, one line "
         "each. Keep ONLY matches worth my attention: anything involving "
         "India (incl. India A / women / U19), international matches between "
-        "major sides, IPL/WPL. Copy the kept score lines verbatim, one per "
+        "major sides, IPL/WPL. Upcoming India matches on the board (listed "
+        "but not yet started) also count as notable — keep those lines so I "
+        "know a match is coming. Copy the kept lines verbatim, one per "
         "line, 5 max. If nothing qualifies, output exactly: NONE\n\n"
         + "\n".join(f"- {s}" for s in scores)
     )
