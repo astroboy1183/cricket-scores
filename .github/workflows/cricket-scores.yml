@@ -11,7 +11,12 @@ on:
     # Evening: the day's results. 16:17 UTC = 21:47 IST; backup 22:47.
     - cron: '17 16 * * *'
     - cron: '17 17 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Set to "scheduler" by fleet-scheduler; leave empty for manual runs'
+        default: ''
+        required: false
 
 permissions:
   contents: read
@@ -26,20 +31,22 @@ jobs:
         id: guard
         env:
           GH_TOKEN: ${{ github.token }}
+          DISPATCH_SOURCE: ${{ inputs.source || '' }}
         run: |
-          # Manual runs always proceed; only scheduled runs dedupe against
-          # each other. Fails open — a broken check must never cost a send.
+          # Truly-manual runs always proceed; cron runs and scheduler
+          # dispatches (source=scheduler) dedupe against each other. Fails open — a broken check must never cost a send.
           # Window is 3 hours, NOT today: that pairs each backup with its
           # own edition's primary while letting the evening edition run
           # after a successful morning one.
-          if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ] && [ "$DISPATCH_SOURCE" != "scheduler" ]; then
             exit 0
           fi
           since=$(date -u -d '3 hours ago' +%Y-%m-%dT%H:%M:%SZ)
           count=$(RUN_ID="$GITHUB_RUN_ID" gh api -X GET \
             "repos/$GITHUB_REPOSITORY/actions/workflows/cricket-scores.yml/runs" \
-            -f event=schedule -f created=">=$since" \
+            -f created=">=$since" \
             --jq '[.workflow_runs[]
+                   | select(.event == "schedule" or .event == "workflow_dispatch")
                    | select(.id != (env.RUN_ID|tonumber))
                    | select(.status == "queued" or .status == "in_progress"
                             or .conclusion == "success")] | length') || count=0
