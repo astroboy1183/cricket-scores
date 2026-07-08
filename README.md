@@ -59,6 +59,8 @@ there's a match worth checking. One agent, one task, one bot:
   checks that the *cron fired*, not that a message was sent, so silent
   days still count as healthy.
 
+- Tests run in CI on every push (`.github/workflows/tests.yml`).
+
 ## Ops
 
 - Schedule: `.github/workflows/cricket-scores.yml`
