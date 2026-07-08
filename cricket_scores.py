@@ -26,17 +26,35 @@ from agentlib import ask_llm, send_telegram
 BASE_DIR = Path(__file__).resolve().parent
 IST = ZoneInfo("Asia/Kolkata")
 
-FEED = "http://static.cricinfo.com/rss/livescores.xml"
+FEED = "https://static.cricinfo.com/rss/livescores.xml"
 MAX_LINES = 25  # score lines are short; pass the whole board through
 
 
 def gather_scores():
-    """Every score line on the board — [] if the feed is unreachable."""
+    """Score lines from the live board.
+
+    Distinguishes a dead feed from a quiet one so main() can be loud on
+    real breakage and silent on a genuinely empty board:
+
+    - ``None`` — the feed is unreachable (network error, HTTP >= 400, or an
+      unparseable body with nothing recovered). A real failure: raise.
+    - ``[]``   — the feed was reached but the board is empty. Nothing on;
+      stay silent.
+    - ``[...]``— up to ``MAX_LINES`` score lines.
+    """
     try:
         feed = feedparser.parse(FEED)
-        return [e.get("title") for e in feed.entries[:MAX_LINES] if e.get("title")]
     except Exception:
-        return []
+        return None
+    # feedparser rarely raises: it flags transport/parse trouble on the
+    # result instead. An HTTP error status, or a bozo (malformed) response
+    # that recovered no entries, both mean "could not fetch the board".
+    status = getattr(feed, "status", None)
+    if status is not None and status >= 400:
+        return None
+    if getattr(feed, "bozo", 0) and not feed.entries:
+        return None
+    return [e.get("title") for e in feed.entries[:MAX_LINES] if e.get("title")]
 
 
 def notable(scores):
@@ -58,6 +76,10 @@ def notable(scores):
 def main():
     load_dotenv(BASE_DIR / ".env")
     scores = gather_scores()
+    if scores is None:
+        # Dead feed is real breakage, not a quiet day: raise so the run
+        # fails and the workflow's failure alert fires.
+        raise RuntimeError(f"cricket live-score feed unreachable: {FEED}")
     lines = notable(scores) if scores else []
     forced = bool(os.environ.get("CRICKET_FORCE"))
 
