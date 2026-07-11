@@ -1,7 +1,7 @@
 # cricket-scores
 
 Notable cricket scores → Telegram, three editions via GitHub Actions:
-~6:17 AM IST (overnight), ~13:37 (lunch — SILENT unless an India side is
+6:00 AM IST (overnight), ~13:37 (lunch — SILENT unless an India side is
 on the board, so it only exists on India match days), ~21:47 (the day's
 results).
 
@@ -104,7 +104,7 @@ structured source is bot-walled. The RSS is the reliable spine.)
 ## Ops
 
 - Schedule: `.github/workflows/cricket-scores.yml`
-  (morning `47 0 * * *` UTC = 06:17 IST, backup 07:17;
+  (morning `30 0 * * *` UTC = 06:00 IST, backup 07:00;
   evening `17 16 * * *` UTC = 21:47 IST, backup 22:47)
 - Run now: `gh workflow run cricket-scores.yml -R astroboy1183/cricket-scores`
 - Secrets (Actions): `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`

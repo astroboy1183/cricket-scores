@@ -3,7 +3,7 @@
 
 Three Telegram editions a day via GitHub Actions:
 
-  morning (~6:17 IST) — overnight matches
+  morning (6:00 IST) — overnight matches
   lunch   (~13:37 IST) — SILENT unless an India side is on the board;
                           on India match days you get a midday score
   evening (~21:47 IST) — the day's results

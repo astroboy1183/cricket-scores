@@ -5,9 +5,9 @@ on:
     # Two editions a day, each with a backup an hour later (GitHub delays
     # or drops schedule events under load — fleet lesson from 2026-07-04).
     # Odd minutes avoid top-of-hour cron congestion.
-    # Morning: overnight matches. 00:47 UTC = 06:17 IST; backup 07:17.
-    - cron: '47 0 * * *'
-    - cron: '47 1 * * *'
+    # Morning: overnight matches. 00:30 UTC = 06:00 IST; backup 07:00.
+    - cron: '30 0 * * *'
+    - cron: '30 1 * * *'
     # Evening: the day's results. 16:17 UTC = 21:47 IST; backup 22:47.
     - cron: '17 16 * * *'
     - cron: '17 17 * * *'
