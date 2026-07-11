@@ -134,5 +134,62 @@ class EditionTest(unittest.TestCase):
             self.assertIn("(lunch)", send.call_args[0][0])
 
 
+def _match(event, gender="male", teams=("India", "Australia"), deliveries=()):
+    """Synthetic cricsheet-shaped match. deliveries: (batter, runs, bowler,
+    wicket_kind_or_None) tuples, all in one over."""
+    ds = []
+    for batter, runs, bowler, kind in deliveries:
+        d = {"batter": batter, "bowler": bowler, "runs": {"batter": runs}}
+        if kind:
+            d["wickets"] = [{"kind": kind}]
+        ds.append(d)
+    return {
+        "event": event, "gender": gender, "teams": list(teams),
+        "innings": [{"overs": [{"deliveries": ds}]}],
+    }
+
+
+class SeriesStatsTest(unittest.TestCase):
+    def test_leaderboards_computed_and_women_tagged(self):
+        matches = [
+            _match("ICC Women's T20 World Cup", "female",
+                   ("India", "England"),
+                   [("Mandhana", 6, "Ecclestone", None),
+                    ("Mandhana", 4, "Ecclestone", None),
+                    ("Rodrigues", 2, "Ecclestone", "bowled")])
+            for _ in range(3)
+        ]
+        block = cricket_scores.series_stats(matches)
+        self.assertIn("📊 SERIES STATS", block)
+        self.assertIn("🚺", block)
+        self.assertIn("Mandhana 30", block)      # (6+4) × 3 matches
+        self.assertIn("Ecclestone 3", block)      # 1 bowled per match
+
+    def test_run_outs_not_credited_to_bowler(self):
+        matches = [
+            _match("India tour", deliveries=[("Gill", 1, "Starc", "run out")])
+        ] * 3
+        block = cricket_scores.series_stats(matches)
+        self.assertNotIn("🎯", block)  # no bowler-credited wickets at all
+
+    def test_untracked_and_thin_series_excluded(self):
+        thin = [_match("ICC World Cup", deliveries=[("A", 1, "B", None)])]  # 1 < min
+        county = [
+            _match("Random County Cup", teams=("Kent", "Surrey"),
+                   deliveries=[("A", 1, "B", None)])
+        ] * 5
+        self.assertEqual(cricket_scores.series_stats(thin + county), "")
+
+    def test_series_cap(self):
+        matches = []
+        for i in range(5):
+            matches += [
+                _match(f"ICC Series {i}", deliveries=[("A", 1, "B", None)])
+            ] * (3 + i)
+        block = cricket_scores.series_stats(matches)
+        self.assertEqual(block.count("• "), cricket_scores.STATS_SERIES_CAP)
+        self.assertIn("ICC Series 4", block)  # busiest kept
+
+
 if __name__ == "__main__":
     unittest.main()

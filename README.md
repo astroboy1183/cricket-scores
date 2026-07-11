@@ -21,9 +21,25 @@ England beat Pakistan by 5 wickets
 India Women v England Women
 ```
 
-Score numbers are always verbatim from the board. SILENT when nothing
-notable is on — a message always means there's a match worth checking.
-One agent, one task, one bot: `@jayanth_cricket_bot`.
+Score numbers are always verbatim from the board. Women's matches are
+first-class citizens — 🚺-tagged (India women get 🇮🇳🚺) and women's
+internationals qualify exactly like men's. SILENT when nothing notable
+is on — a message always means there's a match worth checking. One
+agent, one task, one bot: `@jayanth_cricket_bot`.
+
+**Sunday evenings add 📊 SERIES STATS** — top run-getters and
+wicket-takers for up to 3 active tracked series (India involvement, ICC
+events, IPL/WPL/Hundred/Big Bash), computed **deterministically by this
+agent from Cricsheet's open ball-by-ball archives** (~300 matches/30
+days, one 1.5 MB zip, no API key, no model). Run-outs are correctly not
+credited to bowlers.
+
+```
+📊 SERIES STATS (last 30 days)
+• ICC Women's T20 World Cup 🚺 — 32 matches
+  🏏 DN Wyatt 294 · T Brits 225 · DEM Carter 208
+  🎯 N Shree Charani 14 · Fatima Sana 11 · S Molineux 10
+```
 
 (A structured-data upgrade — series names, session status, fixture
 times — is parked pending a free cricketdata.org API key; every keyless

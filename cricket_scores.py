@@ -29,12 +29,16 @@ structured source is bot-walled. The RSS is the reliable spine.)
 Hard failures raise and land in the Actions log.
 """
 
+import io
+import json
 import os
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import feedparser
+import requests
 from dotenv import load_dotenv
 
 from agentlib import ask_llm, send_telegram
@@ -45,6 +49,17 @@ IST = ZoneInfo("Asia/Kolkata")
 FEED = "https://static.cricinfo.com/rss/livescores.xml"
 MAX_LINES = 25  # score lines are short; pass the whole board through
 MAX_KEPT = 7    # lines across all sections; the board rarely earns more
+
+# Sunday-evening series stats, computed by US from Cricsheet's ball-by-ball
+# archives (keyless, open data) — no stats API needed when you have every
+# delivery. 30-day window ≈ every active series.
+CRICSHEET_URL = "https://cricsheet.org/downloads/recently_added_30_json.zip"
+STATS_SERIES_CAP = 3       # series shown, busiest first
+MIN_SERIES_MATCHES = 3     # below this a "series" is noise in a 30d window
+STATS_KEYWORDS = (         # series worth stats even without India in them
+    "india", "icc", "world cup", "ipl", "wpl", "asia cup",
+    "champions trophy", "the hundred", "big bash",
+)
 
 
 def edition(now):
@@ -92,6 +107,89 @@ def gather_scores():
     return [e.get("title") for e in feed.entries[:MAX_LINES] if e.get("title")]
 
 
+def fetch_cricsheet_matches():
+    """Parsed matches from Cricsheet's 30-day archive (event/gender/teams
+    + full innings). One ~1.5 MB zip; raises on fetch failure."""
+    resp = requests.get(
+        CRICSHEET_URL,
+        timeout=90,
+        headers={"User-Agent": "Mozilla/5.0 (cricket-scores agent)"},
+    )
+    resp.raise_for_status()
+    archive = zipfile.ZipFile(io.BytesIO(resp.content))
+    out = []
+    for name in archive.namelist():
+        if not name.endswith(".json"):
+            continue
+        try:
+            m = json.loads(archive.read(name))
+        except ValueError:
+            continue  # one malformed file must not sink the stats
+        info = m.get("info", {})
+        out.append(
+            {
+                "event": (info.get("event") or {}).get("name", ""),
+                "gender": info.get("gender", ""),
+                "teams": info.get("teams", []),
+                "innings": m.get("innings", []),
+            }
+        )
+    return out
+
+
+def _tracked_series(event, teams):
+    hay = event.lower()
+    if any(k in hay for k in STATS_KEYWORDS):
+        return True
+    return any("india" in t.lower() for t in teams)
+
+
+def series_stats(matches):
+    """'📊 SERIES STATS' block: top run-getters and wicket-takers per
+    tracked series, computed deterministically from ball-by-ball data.
+    Women's series carry a 🚺 tag. Returns '' when nothing qualifies."""
+    groups = {}
+    for m in matches:
+        if not m["event"] or not _tracked_series(m["event"], m["teams"]):
+            continue
+        groups.setdefault((m["event"], m["gender"]), []).append(m)
+    picked = [
+        g for g in sorted(groups.items(), key=lambda kv: -len(kv[1]))
+        if len(g[1]) >= MIN_SERIES_MATCHES
+    ][:STATS_SERIES_CAP]
+
+    blocks = []
+    for (event, gender), ms in picked:
+        runs, wkts = {}, {}
+        for m in ms:
+            for inn in m["innings"]:
+                for over in inn.get("overs", []):
+                    for d in over.get("deliveries", []):
+                        batter = d.get("batter")
+                        runs[batter] = (
+                            runs.get(batter, 0) + d.get("runs", {}).get("batter", 0)
+                        )
+                        for w in d.get("wickets", []):
+                            # bowler-credited dismissals only
+                            if w.get("kind") not in (
+                                "run out", "retired hurt", "retired out",
+                            ):
+                                bowler = d.get("bowler")
+                                wkts[bowler] = wkts.get(bowler, 0) + 1
+        top_r = sorted(runs.items(), key=lambda kv: -kv[1])[:3]
+        top_w = sorted(wkts.items(), key=lambda kv: -kv[1])[:3]
+        tag = " 🚺" if gender == "female" else ""
+        lines = [f"• {event}{tag} — {len(ms)} matches"]
+        if top_r:
+            lines.append("  🏏 " + " · ".join(f"{p} {r}" for p, r in top_r))
+        if top_w:
+            lines.append("  🎯 " + " · ".join(f"{p} {w}" for p, w in top_w))
+        blocks.append("\n".join(lines))
+    if not blocks:
+        return ""
+    return "📊 SERIES STATS (last 30 days)\n" + "\n".join(blocks)
+
+
 def notable(scores, ed="morning"):
     """Model filters AND sections the board; returns [] when nothing
     qualifies. Lines are kept verbatim inside the sections."""
@@ -105,7 +203,8 @@ def notable(scores, ed="morning"):
         "Below is every match on today's cricket live-score board, one line "
         "each. Keep ONLY matches worth my attention: anything involving "
         "India (incl. India A / women / U19), international matches between "
-        "major sides, IPL/WPL. " + lunch_rule +
+        "major sides — men's AND women's equally — IPL/WPL/The Hundred. "
+        + lunch_rule +
         "\nFormat the kept lines into these sections, inferring each line's "
         "state from its own text:\n\n"
         "🔴 LIVE — matches in progress (a live board line has innings "
@@ -119,7 +218,8 @@ def notable(scores, ed="morning"):
         "team names, scores or overs. Numbers must match the board "
         "exactly.\n"
         "- Prefix lines involving an India side with 🇮🇳 and put them "
-        "first within their section.\n"
+        "first within their section. Prefix women's matches with 🚺 "
+        "(an India women's line gets both: 🇮🇳🚺).\n"
         "- Omit any section with no lines. No commentary, no extra text.\n"
         f"- At most {MAX_KEPT} lines across all sections.\n"
         "If nothing qualifies, output exactly: NONE\n\n"
@@ -150,12 +250,29 @@ def main():
         return
 
     lines = notable(scores, ed) if scores else []
-    if not lines and not forced:
+
+    # Sunday evening: append series leaderboards computed from Cricsheet's
+    # ball-by-ball data. Worth sending even on a quiet board — the week's
+    # stats stand on their own.
+    stats_block = ""
+    if ed == "evening" and now.weekday() == 6:
+        try:
+            stats_block = series_stats(fetch_cricsheet_matches())
+        except Exception:
+            stats_block = ""  # stats are an enrichment, never a dead run
+
+    if not lines and not stats_block and not forced:
         print("no notable matches — staying silent")
         return
 
-    body = "\n".join(lines) or "No notable matches today (forced send)."
-    send_telegram(f"🏏 Cricket — {now:%a %d %b} ({ed})\n\n{body}")
+    parts = []
+    if lines:
+        parts.append("\n".join(lines))
+    elif forced:
+        parts.append("No notable matches today (forced send).")
+    if stats_block:
+        parts.append(stats_block)
+    send_telegram(f"🏏 Cricket — {now:%a %d %b} ({ed})\n\n" + "\n\n".join(parts))
 
 
 if __name__ == "__main__":
