@@ -1,12 +1,33 @@
 # cricket-scores
 
-Notable cricket scores → Telegram, twice daily via GitHub Actions:
-~6:17 AM IST (overnight matches) and ~21:47 IST (the day's results).
+Notable cricket scores → Telegram, three editions via GitHub Actions:
+~6:17 AM IST (overnight), ~13:37 (lunch — SILENT unless an India side is
+on the board, so it only exists on India match days), ~21:47 (the day's
+results).
 
-Filters the ESPN Cricinfo live-scores board down to matches worth
-attention. SILENT when nothing notable is on — a message always means
-there's a match worth checking. One agent, one task, one bot:
-`@jayanth_cricket_bot`.
+The board is filtered to matches worth attention and formatted into
+sections inferred from each line's own text:
+
+```
+🏏 Cricket — Sat 11 Jul (evening)
+
+🔴 LIVE
+🇮🇳 India 245/3 (78 ov) v Australia 250
+
+✅ RESULTS
+England beat Pakistan by 5 wickets
+
+📅 UPCOMING
+India Women v England Women
+```
+
+Score numbers are always verbatim from the board. SILENT when nothing
+notable is on — a message always means there's a match worth checking.
+One agent, one task, one bot: `@jayanth_cricket_bot`.
+
+(A structured-data upgrade — series names, session status, fixture
+times — is parked pending a free cricketdata.org API key; every keyless
+structured source is bot-walled. The RSS is the reliable spine.)
 
 ## How the code works
 

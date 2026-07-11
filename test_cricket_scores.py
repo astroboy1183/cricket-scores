@@ -91,5 +91,48 @@ class MainBranchingTest(unittest.TestCase):
             self.assertIn("India 5/0 v Australia", send.call_args[0][0])
 
 
+class EditionTest(unittest.TestCase):
+    def _now(self, hour):
+        from datetime import datetime
+        return datetime(2026, 7, 11, hour, 17, tzinfo=cricket_scores.IST)
+
+    def test_edition_boundaries(self):
+        self.assertEqual(cricket_scores.edition(self._now(6)), "morning")
+        self.assertEqual(cricket_scores.edition(self._now(13)), "lunch")
+        self.assertEqual(cricket_scores.edition(self._now(21)), "evening")
+
+    def test_india_detection_avoids_west_indies(self):
+        self.assertTrue(cricket_scores.india_on_board(["India Women 120/2 v England"]))
+        self.assertTrue(cricket_scores.india_on_board(["Kent v Surrey", "India A 50/1"]))
+        self.assertFalse(cricket_scores.india_on_board(["West Indies 200 v Australia"]))
+
+    def _run_lunch(self, board, send):
+        fixed = self._now(13)
+
+        class FixedDT(cricket_scores.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed.astimezone(tz) if tz else fixed
+
+        with mock.patch.object(cricket_scores, "load_dotenv"), \
+             mock.patch.object(cricket_scores, "datetime", FixedDT), \
+             mock.patch.object(cricket_scores, "gather_scores", return_value=board), \
+             mock.patch.object(cricket_scores, "notable",
+                               return_value=[f"🇮🇳 {board[0]}"] if board else []), \
+             mock.patch.dict("os.environ", {}, clear=True):
+            cricket_scores.main()
+
+    def test_lunch_silent_without_india(self):
+        with mock.patch.object(cricket_scores, "send_telegram") as send:
+            self._run_lunch(["West Indies 200 v Australia"], send)
+            send.assert_not_called()
+
+    def test_lunch_sends_when_india_live(self):
+        with mock.patch.object(cricket_scores, "send_telegram") as send:
+            self._run_lunch(["India 245/3 v Australia"], send)
+            send.assert_called_once()
+            self.assertIn("(lunch)", send.call_args[0][0])
+
+
 if __name__ == "__main__":
     unittest.main()
